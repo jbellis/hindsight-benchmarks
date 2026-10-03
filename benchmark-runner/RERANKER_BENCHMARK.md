@@ -112,3 +112,7 @@ uv tool run ruff check rerank_eval.py summarize_rerankers.py validate_reranker_m
 Run `npm ci && npm run build` in `visualizer` to validate the leaderboard with the published data.
 
 The listwise preflight initially rejected a response with an unnecessarily strict probability-sum check. That extra check was removed: ranking requires valid finite probabilities for every option, not an exact sum across the reported API values. The two completed preflight queries and the interrupted request were excluded, preserved separately, and the entire listwise run restarted. Their recorded usage and unknown interrupted-request billing are disclosed in the run-interruptions ledger.
+
+## Separate embedding comparison
+
+[LoCoMo embedding results](EMBEDDING_RERANKER_RESULTS.md) compare BGE-base-en-v1.5, Voyage 4 Nano and Granite Small English R2 with Jev listwise and Ettin 150M. The original corpus, questions and labels are unchanged, but each embedding model produces its own BM25-fused candidate pool. These six retrieval-plus-reranking results live separately under `results/experiments/embedding-reranker-locomo/`; they are not mixed into the fixed-candidate reranker leaderboard. New hosted queries run concurrently, so their timings are not controlled comparisons with the original sequential runs.
