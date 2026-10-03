@@ -80,6 +80,18 @@ def prepare(args):
     fixture = read_json(DATA / "locomo10-top100.json.gz")
     validate_fixture(fixture)
     baseline_hash = fixture.pop("fixture_sha256")
+    if args.embedding == "voyage":
+        # This official snapshot omits config_class; Transformers 5 requires it
+        # during AutoModel registration. No forward-pass or weight change.
+        from transformers import Qwen3Config
+        from transformers.dynamic_module_utils import get_class_from_dynamic_module
+
+        model_class = get_class_from_dynamic_module(
+            "modeling_qwen3_bidirectional.Qwen3BidirectionalModel",
+            config["model"],
+            revision=config["revision"],
+        )
+        model_class.config_class = Qwen3Config
     model = SentenceTransformer(
         config["model"],
         revision=config["revision"],
@@ -93,6 +105,9 @@ def prepare(args):
         "max_seq_length": model.max_seq_length,
         "dimension": model.get_sentence_embedding_dimension(),
         "precision": "float32",
+        "registration_compatibility": "Explicit Qwen3Config config_class for Transformers 5; forward unchanged"
+        if args.embedding == "voyage"
+        else None,
         "attention": "sdpa",
         "batch_size": args.batch_size,
         "fusion": "1/(60+BM25_rank) + 1/(60+dense_rank); ranks start at 1; all corpus documents participate",
