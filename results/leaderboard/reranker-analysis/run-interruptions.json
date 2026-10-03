@@ -50,5 +50,22 @@
       "successful_query_timestamp_utc": "2026-10-03T19:17:51Z"
     }
   ],
-  "note": "All scored runs completed every eligible query. Per-query latency and usage include only the successful completed attempt and its internal retries. Abandoned-attempt latency/billing and time between resumes are not included; abandoned billing is unknown."
+  "note": "All scored runs completed every eligible query. Per-query latency and usage include only the successful completed attempt and its internal retries. Abandoned-attempt latency/billing and time between resumes are not included; abandoned billing is unknown.",
+  "excluded_preflight_attempts": [
+    {
+      "model": "jev-listwise",
+      "dataset": "locomo",
+      "completed_queries": 2,
+      "stopped_query": "conv-26/q2",
+      "reason": "An over-strict adapter check required Choice probabilities to sum to one within 0.0001. Ranking only requires finite per-option probabilities; upstream does not require this sum check. Removed the extra check and restarted the entire listwise run.",
+      "recorded_usage": {
+        "input_tokens": 15371,
+        "output_tokens": 1816,
+        "choice_calls": 2
+      },
+      "failed_request_billing": "unknown",
+      "included_in_published_cost_or_latency": false,
+      "initial_run_sha256": "d545cbbbb1d99be2fbd91ecbfd02a34b3b38cab88a1e43d99a1d045ddf177889"
+    }
+  ]
 }

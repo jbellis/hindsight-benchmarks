@@ -7,7 +7,7 @@
     "recall_at_5": "recall_5",
     "recall_at_10": "recall_10"
   },
-  "comparisons": 89056,
+  "comparisons": 97152,
   "maximum_absolute_error": 2.220446049250313e-16,
   "runs": [
     {
@@ -99,6 +99,14 @@
       "evaluation_label_sha256": null
     },
     {
+      "model": "jev-listwise",
+      "dataset": "locomo",
+      "queries": 1533,
+      "fixture_sha256": "3303c17bbb4e5ac762b25a2ef03e4545bc79e8f5079de83d82930c081cc932eb",
+      "run_sha256": "182f95f0357f27c257c46e5ed7d60d483ef031fd69aa95cdb09581409612896a",
+      "evaluation_label_sha256": null
+    },
+    {
       "model": "rrf",
       "dataset": "scifact",
       "queries": 300,
@@ -187,6 +195,14 @@
       "evaluation_label_sha256": null
     },
     {
+      "model": "jev-listwise",
+      "dataset": "scifact",
+      "queries": 300,
+      "fixture_sha256": "ddbac0a4ef85d51da162ef61bc874c5a5c18358d26d52c69ed388dfdfc997179",
+      "run_sha256": "442a5c4a7138e0dd5272e3ffc3c6ddcaf728f03c0ddecb653dbd0d8270e51cba",
+      "evaluation_label_sha256": null
+    },
+    {
       "model": "rrf",
       "dataset": "scifact-evidence",
       "queries": 188,
@@ -272,6 +288,14 @@
       "queries": 188,
       "fixture_sha256": "ddbac0a4ef85d51da162ef61bc874c5a5c18358d26d52c69ed388dfdfc997179",
       "run_sha256": "e9e6e861b658fd8a9545e1e66838666c6281be63bfbe7ef7edbf16b737ea4b8c",
+      "evaluation_label_sha256": "beda364a4f1275a81891e95e6cead7f6d866f5af7abe765fff9f2dfd34695265"
+    },
+    {
+      "model": "jev-listwise",
+      "dataset": "scifact-evidence",
+      "queries": 188,
+      "fixture_sha256": "ddbac0a4ef85d51da162ef61bc874c5a5c18358d26d52c69ed388dfdfc997179",
+      "run_sha256": "442a5c4a7138e0dd5272e3ffc3c6ddcaf728f03c0ddecb653dbd0d8270e51cba",
       "evaluation_label_sha256": "beda364a4f1275a81891e95e6cead7f6d866f5af7abe765fff9f2dfd34695265"
     }
   ]
