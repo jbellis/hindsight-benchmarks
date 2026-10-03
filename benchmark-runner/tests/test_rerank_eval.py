@@ -428,3 +428,67 @@ def test_jev_listwise_tournament_compares_finalists_and_preserves_rest_input_ord
     assert rank_scores(scores, 9) == [8, 7, 3, 0, 1, 2, 4, 5, 6]
     assert usage["choice_calls"] == 3
     assert all(len(body["questions"]["rank"]["criteria"]) >= 2 for body in bodies)
+
+
+def test_embedding_experiment_applies_model_specific_prompts():
+    from embedding_experiment import MODELS, encode
+
+    class Encoder:
+        def encode(self, texts, **kwargs):
+            return texts, kwargs
+
+    _, query = encode(Encoder(), ["q"], MODELS["voyage"], "query", 8)
+    _, document = encode(Encoder(), ["d"], MODELS["voyage"], "document", 8)
+    _, granite = encode(Encoder(), ["q"], MODELS["granite"], "query", 8)
+    assert query["prompt"] != document["prompt"]
+    assert granite["prompt"] == ""
+    assert query["normalize_embeddings"] is True
+
+
+def test_embedding_candidate_selection_uses_ranks_without_gold_injection():
+    import numpy as np
+    from embedding_experiment import fused_candidates
+
+    ids = ["a", "b", "gold"]
+    chosen = fused_candidates(ids, np.array([3, 2, 1]), np.array([3, 2, 1]), 2)
+    assert chosen == ["a", "b"]
+
+
+def test_concurrent_embedding_run_writes_each_pending_query_once_and_resumes():
+    from embedding_experiment import concurrent_queries
+
+    fixture = {
+        "corpus": {"a": "first", "b": "second"},
+        "queries": [
+            {
+                "id": str(i),
+                "query": "q",
+                "group": "chat",
+                "category": 1,
+                "candidates": ["a", "b"],
+                "relevant": {"b": 1},
+            }
+            for i in range(10)
+        ],
+    }
+
+    class Fake:
+        retries = 0
+
+        async def score(self, query, docs):
+            await asyncio.sleep(0)
+            return [0.1, 0.9], {"input_tokens": 2}, 0.001
+
+    records = {"0": {"already": "done"}}
+    appended = []
+    asyncio.run(
+        concurrent_queries(
+            fixture, [Fake(), Fake(), Fake()], records, "hash", appended.append
+        )
+    )
+    assert len(appended) == 9
+    assert set(records) == {str(i) for i in range(10)}
+    assert all(row["order"] == [1, 0] for row in appended)
+    assert records["0"] == {"already": "done"}
+    asyncio.run(concurrent_queries(fixture, [Fake()], records, "hash", appended.append))
+    assert len(appended) == 9
