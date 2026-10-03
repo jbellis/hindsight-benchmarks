@@ -33,6 +33,13 @@ MODELS = {
         "query_prompt": "Represent the query for retrieving supporting documents: ",
         "document_prompt": "Represent the document for retrieval: ",
     },
+    "bge-small": {
+        "model": "BAAI/bge-small-en-v1.5",
+        "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "trust_remote_code": False,
+        "query_prompt": "",
+        "document_prompt": "",
+    },
     "granite": {
         "model": "ibm-granite/granite-embedding-small-english-r2",
         "revision": "2ab6fa8ea2d674564defd37171ae19079b864b33",
@@ -41,6 +48,7 @@ MODELS = {
         "document_prompt": "",
     },
 }
+MODELS["voyage-1024"] = {**MODELS["voyage"], "truncate_dim": 1024}
 
 
 def encode(model, texts, config, kind, batch_size):
@@ -49,6 +57,9 @@ def encode(model, texts, config, kind, batch_size):
         texts,
         prompt=config[kind + "_prompt"],
         normalize_embeddings=True,
+        **(
+            {"truncate_dim": config["truncate_dim"]} if "truncate_dim" in config else {}
+        ),
         batch_size=batch_size,
         show_progress_bar=True,
     )
@@ -80,7 +91,7 @@ def prepare(args):
     fixture = read_json(DATA / "locomo10-top100.json.gz")
     validate_fixture(fixture)
     baseline_hash = fixture.pop("fixture_sha256")
-    if args.embedding == "voyage":
+    if config["model"] == "voyageai/voyage-4-nano":
         # This official snapshot omits config_class; Transformers 5 requires it
         # during AutoModel registration. No forward-pass or weight change.
         from transformers import Qwen3Config
@@ -103,10 +114,12 @@ def prepare(args):
     fixture["retriever"] = {
         **config,
         "max_seq_length": model.max_seq_length,
-        "dimension": model.get_sentence_embedding_dimension(),
+        "dimension": config.get(
+            "truncate_dim", model.get_sentence_embedding_dimension()
+        ),
         "precision": "float32",
         "registration_compatibility": "Explicit Qwen3Config config_class for Transformers 5; forward unchanged"
-        if args.embedding == "voyage"
+        if config["model"] == "voyageai/voyage-4-nano"
         else None,
         "attention": "sdpa",
         "batch_size": args.batch_size,
@@ -259,7 +272,7 @@ def export(args):
     all_rows = {}
     comparisons = 0
     output = EXPERIMENT / "results"
-    for embedding in ["bge", "voyage", "granite"]:
+    for embedding in ["bge", "voyage", "granite", "bge-small", "voyage-1024"]:
         fixture_path = (
             DATA / "locomo10-top100.json.gz"
             if embedding == "bge"

@@ -443,6 +443,12 @@ def test_embedding_experiment_applies_model_specific_prompts():
     assert query["prompt"] != document["prompt"]
     assert granite["prompt"] == ""
     assert query["normalize_embeddings"] is True
+    _, nano = encode(Encoder(), ["q"], MODELS["voyage-1024"], "query", 8)
+    assert nano["truncate_dim"] == 1024
+    assert nano["normalize_embeddings"] is True
+    _, small = encode(Encoder(), ["q"], MODELS["bge-small"], "query", 8)
+    assert small["prompt"] == ""
+    assert "truncate_dim" not in small
 
 
 def test_embedding_candidate_selection_uses_ranks_without_gold_injection():
