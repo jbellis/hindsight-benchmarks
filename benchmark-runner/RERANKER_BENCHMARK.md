@@ -1,6 +1,6 @@
 # Direct reranker benchmark
 
-This benchmark measures passage ordering on identical, frozen candidate lists. Each model receives exactly the same query and candidate text. It reports evidence retrieval quality, uncertainty, client-observed latency, retries, and API usage separately. It does not measure Hindsight's extraction, graph retrieval, observation consolidation, or answer generation.
+This benchmark measures passage ordering on identical, frozen candidate lists. Each model receives exactly the same query and candidate text. It reports relevance quality, uncertainty, client-observed latency, retries, and API usage separately. It does not measure Hindsight's extraction, graph retrieval, observation consolidation, or answer generation.
 
 ## Why the previous results were removed
 
@@ -14,17 +14,19 @@ References: [original benchmark commit](https://github.com/vectorize-io/hindsigh
 
 **LoCoMo:** all ten conversations from the original `snap-research/locomo` release. A document is one dialogue turn, with its speaker, session timestamp, and any provided image caption/search description. We use the dataset's original evidence IDs, not model-generated fact annotations. There are 1,986 source questions: 446 adversarial questions are excluded, four non-adversarial questions have no evidence annotations, and three have unresolved evidence references. The resulting 1,533 questions are fixed for every model. Syntax normalization splits packed ID lists, accepts the extra colon in `D:11:26`, and removes leading zeros from numeric ID components. It never guesses a nonexistent turn. Every correction and exclusion is saved in the fixture. The evidence sets are binary and can be incomplete: an unannotated useful passage may receive no credit. This is retrieval of annotated dialogue evidence, not a test of extracted memory facts. A diagnostic inspection found concrete incomplete labels: for conv-48/q41 (ways of enhancing yoga practice), the top Voyage passage explicitly mentions candles and essential oils but is absent from the source evidence set; for conv-44/q58 (dinner on October 24), a passage identifying sushi for that evening is similarly unlabelled. These examples were selected from top-1 misses and are not a random estimate of label error frequency. We leave source labels fixed and publish this limitation rather than changing labels after seeing model outputs.
 
-**SciFact:** the BEIR test split, 300 queries against 5,183 scientific abstracts. Documents contain title and abstract. Positive qrels identify evidence useful for supporting or contradicting a claim; both count as relevant. This supplies an independent domain with expert-written claims and annotated scientific evidence, but is still a public benchmark.
+**BEIR SciFact:** 300 queries against 5,183 scientific abstracts, with title and abstract as document text. The BEIR `test` split is the original SciFact **development** set. Its 339 positive qrels exactly match the papers cited by each claim's source sentence, rather than the original explicit evidence annotations. In the original release, 112 of these claims have no annotated supporting or contradicting evidence, and 130 of BEIR's 339 cited-paper positives are not explicit evidence positives. This view measures cited-document retrieval and retains the standard BEIR relevance definition.
 
-The frozen files are `datasets/reranker/locomo10-top100.json.gz` and `datasets/reranker/scifact-test-top100.json.gz`. Each includes the corpus, queries, evidence labels, candidate IDs in input order, preparation parameters, source checksum, and a verified content hash. Expected answers, summaries, observations, and gold IDs are never passed to a reranker.
+**SciFact annotated-evidence view:** reuse the identical recorded rankings for the 188 development claims with explicit human SUPPORT or CONTRADICT annotations, crediting their 209 annotated evidence abstracts. Both support and contradiction count as relevant. All 112 claims without evidence are excluded uniformly for every model, independently of retrieval or model success. The label file is derived from the original SciFact release, includes its source checksum and every exclusion, and verifies original query text against the BEIR fixture. Aggregation first validates every query in the full 300-query run, then evaluates this label view. It preserves original metrics alongside the derived metrics in the evidence-view records. This is a second label view of the same scientific domain, not an independent third benchmark or a new holdout.
 
-Sources: [LoCoMo dataset](https://github.com/snap-research/locomo), [LoCoMo paper](https://arxiv.org/abs/2402.17753), [BEIR dataset download](https://github.com/beir-cellar/beir/wiki/Datasets-available), [SciFact paper](https://arxiv.org/abs/2004.14974).
+The frozen input files are `datasets/reranker/locomo10-top100.json.gz` and `datasets/reranker/scifact-test-top100.json.gz`; the independent evidence view is `datasets/reranker/scifact-evidence-labels.json`. Each input includes the corpus, queries, relevance labels, candidate IDs in input order, preparation parameters, source checksum, and a verified content hash. Expected answers, summaries, observations, and gold IDs are never passed to a reranker. Dataset attribution, adaptations, and retained licenses are in [datasets/reranker/README.md](datasets/reranker/README.md).
+
+Sources: [LoCoMo dataset](https://github.com/snap-research/locomo), [LoCoMo paper](https://arxiv.org/abs/2402.17753), [BEIR dataset download](https://github.com/beir-cellar/beir/wiki/Datasets-available), [SciFact paper](https://arxiv.org/abs/2004.14974), [SciFact distinction between cited documents and annotated evidence](https://github.com/allenai/scifact/blob/master/doc/data.md).
 
 ## Training exposure and interpretation
 
 These are **public-benchmark results, not a claim of unseen-data or zero-shot performance**. Training exposure for the hosted models and their base models is not independently known. Corpus familiarity alone is weaker evidence of contamination than exposure to query/evidence pairs or repeated model selection against their labels.
 
-Ettin explicitly monitored NanoBEIR throughout training, selected checkpoints using it, and selected the released checkpoint using full MTEB retrieval scores. NanoBEIR includes SciFact. This is disclosed benchmark-driven model selection, and means SciFact cannot be treated as a clean holdout for Ettin. Hindsight's Jev integration was itself developed using LoCoMo experiments; our independently specified pointwise Jev adapter is evaluated without tuning the rubric against these results. A new private holdout is required before claiming generalization to fresh tasks or choosing a production model solely on these rankings. [Ettin training and model selection](https://huggingface.co/blog/ettin-reranker#evaluation).
+Ettin explicitly monitored NanoBEIR throughout training, selected checkpoints using it, and selected the released checkpoint using full MTEB retrieval scores. NanoBEIR includes SciFact. This is disclosed benchmark-driven model selection, and means SciFact cannot be treated as a clean holdout for Ettin; it does not establish direct training on SciFact test labels. Hindsight's Jev integration was itself developed using LoCoMo experiments; our independently specified pointwise Jev adapter is evaluated without tuning the rubric against these results. A new private holdout is required before claiming generalization to fresh tasks or choosing a production model solely on these rankings. Bootstrap intervals measure sampling uncertainty and cannot quantify contamination. [Ettin training and model selection](https://huggingface.co/blog/ettin-reranker#evaluation), [NanoSciFact](https://huggingface.co/datasets/zeta-alpha-ai/NanoSciFact).
 
 ## Frozen retrieval
 
@@ -42,11 +44,11 @@ Jev is pinned to `jev-1.13.0` and evaluated **pointwise**: one separate Noul req
 
 Warm latency starts immediately before scoring a query's whole candidate pool and includes local token-length auditing, client pacing/queueing, retries, and network round trips. It excludes fixture loading, candidate retrieval, model download, initialization, and warmup. Jev's request-level latency is not presented as its whole-query latency. Local GPU jobs run sequentially; independent hosted jobs run concurrently. We publish p50/p95 and mean, not just the successful final attempt's time.
 
-Transient HTTP 429/5xx and transport failures retry with bounded backoff. Retry counts are included. A query that still fails stops the run and creates an explicit local failure report; it is never scored as an irrelevant result. Resume requires the same fixture, adapter, model configuration, environment, hardware, and concurrency. A complete quality result is emitted only after every fixed eligible query succeeds and all stored orderings/metrics are revalidated. No partial run enters the leaderboard.
+The current runner retries HTTP 429, all 5xx responses, and transport failures with bounded backoff. The published runs used the recorded earlier adapter revision, which retried 500/502/503/504 but stopped on Jev's 529 responses; these whole-query interruptions were resumed with the exact preserved scoring implementation. Interrupted attempts are reported separately in `results/leaderboard/reranker-analysis/run-interruptions.json`. Per-query latency, usage, and retry counts cover the successful completed attempt and its internal retries; they exclude work in a previous interrupted attempt and time between resumed runs. Failed-attempt billing is unknown. A failed query is never scored as irrelevant. Resume requires the same fixture, adapter, model configuration, environment, hardware, and concurrency. A complete quality result is emitted only after every fixed eligible query succeeds and all stored orderings/metrics are revalidated. No partial run enters the leaderboard.
 
 ## Metrics and uncertainty
 
-`nDCG@10` uses gain `2^relevance - 1` and logarithmic rank discount. Its ideal ranking uses all source evidence, including evidence missing from candidates. `MRR` averages the reciprocal rank of the first annotated relevant passage across all fixed queries. `Recall@K` averages `number of relevant passages in top K / total relevant passages` per query. `Hit@K` separately reports whether any annotated evidence is in the first K. This distinction matters for questions requiring multiple passages.
+`nDCG@10` uses gain `2^relevance - 1` and logarithmic rank discount. Its ideal ranking uses all source positives, including positives missing from candidates. `MRR` averages the reciprocal rank of the first annotated relevant passage across all fixed queries. `Recall@K` averages `number of relevant passages in top K / total relevant passages` per query. `Hit@K` separately reports whether any annotated positive is in the first K. This distinction matters for questions requiring multiple passages, and the relevance definition differs between the two SciFact views.
 
 Quality estimates use the arithmetic mean over fixed queries, with categories and individual conversation/query groups also available. The 95% percentile intervals use 5,000 bootstrap samples: whole conversations for LoCoMo, individual queries for SciFact. Whole-conversation resampling preserves dependence between questions from the same conversation. LoCoMo has only ten independent conversations, so its intervals are necessarily coarse. Bootstrap intervals do not capture label errors, training exposure, or sensitivity to retriever choice.
 
@@ -71,9 +73,12 @@ After all runs, export complete results and paired intervals using the same lock
 
 ```sh
 uv run --no-project --script summarize_rerankers.py --records reranker-runs
+uv run --no-project --script validate_reranker_metrics.py
 ```
 
-Aggregates are `{model}--{dataset}.json`; raw per-query scores, original-index permutations, timestamps, latency, usage, and metrics are compressed under `results/leaderboard/reranker/records/`. Candidate text and labels live once in the matching hashed fixture.
+Aggregates are `{model}--{dataset}.json`, with datasets `locomo`, `scifact`, and `scifact-evidence`; per-query scores, original-index permutations, timestamps, latency, usage, and metrics are compressed under `results/leaderboard/reranker/records/`. Candidate text lives once in the matching hashed input fixture. Evidence-view exports identify the additional label checksum and full scored-query count; their predictions and measured latency are reused, not newly measured.
+
+The independent validator uses `pytrec-eval-terrier` to check every published query and aggregate for nDCG@10, reciprocal rank, recall@5, and recall@10. It requires complete query coverage and matching fixture/run fingerprints. Its report is saved in `results/leaderboard/reranker-analysis/metric-validation.json`.
 
 To rebuild fixtures from public sources, download [LoCoMo](https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json) and [BEIR SciFact](https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip), verify their hashes against the published fixture, then run:
 
@@ -82,8 +87,22 @@ uv run --no-project --script run_all_reranker.py prepare \
   --dataset locomo --source /path/to/locomo10.json --output /path/to/new-locomo.json.gz
 uv run --no-project --script run_all_reranker.py prepare \
   --dataset scifact --source /path/to/scifact.zip --output /path/to/new-scifact.json.gz
+uv run --no-project --script run_all_reranker.py prepare-evidence-labels \
+  --source /path/to/scifact-original.tar.gz --fixture /path/to/new-scifact.json.gz \
+  --output /path/to/new-scifact-evidence-labels.json
 ```
 
-Preparation refuses to overwrite a fixture. Numerical retrieval may differ across hardware; reuse the published fixture for an exact candidate comparison. Model-specific runtime metadata is preserved in each result. Hosted model IDs other than pinned Jev identify a service version but do not expose an immutable server checkpoint.
+Download the [original SciFact release](https://scifact.s3-us-west-2.amazonaws.com/release/latest/data.tar.gz) for evidence-label preparation. This verifies every original development claim against BEIR query text and every original abstract against scored text, allowing whitespace normalization only.
 
-Validation: `python -m pytest tests/test_rerank_eval.py -q`, `ruff check rerank_eval.py summarize_rerankers.py run_all_reranker.py tests/test_rerank_eval.py`, and `npm ci && npm run build` in `visualizer`.
+Preparation refuses to overwrite a fixture or label file. Numerical retrieval may differ across hardware; reuse the published fixture for an exact candidate comparison. Model-specific runtime metadata is preserved in each result. The scoring implementation used for these runs is preserved in [commit abda099](https://github.com/jbellis/hindsight-benchmarks/commit/abda099); its SHA256 is recorded in every run's metadata. Later changes add export validation, the independent evidence view, and broader 5xx retry handling. Hosted model IDs other than pinned Jev identify a service version but do not expose an immutable server checkpoint.
+
+Validate the focused behavior tests without resolving the parent project's Hindsight dependencies:
+
+```sh
+uv run --no-project --with pytest==9.0.2 --with numpy==2.5.3 --with httpx==0.28.1 \
+  python -m pytest tests/test_rerank_eval.py -q
+uv tool run ruff check rerank_eval.py summarize_rerankers.py validate_reranker_metrics.py \
+  run_all_reranker.py tests/test_rerank_eval.py
+```
+
+Run `npm ci && npm run build` in `visualizer` to validate the leaderboard with the published data.

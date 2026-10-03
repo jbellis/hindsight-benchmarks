@@ -121,7 +121,7 @@ export default function Home() {
               Model Leaderboard
             </h2>
             <p className="text-muted-foreground max-w-xl">
-              Find the best LLM, reranker, and embedding model for your Hindsight setup — ranked by quality, speed, and cost.
+              Compare LLMs, rerankers, and embedding models for Hindsight on quality, speed, and cost.
             </p>
           </div>
           <LeaderboardBlock entries={leaderboardEntries} />

@@ -25,7 +25,7 @@ export default function RerankerTable({ rerankers }: { rerankers: RerankerRow[] 
       <select value={sort} onChange={e => setSort(e.target.value as SortKey)} className="bg-secondary border border-border rounded px-3 py-2">
         <option value="ndcg_at_10">nDCG@10</option>
         <option value="mrr">MRR</option>
-        <option value="recall_at_5">Evidence recall@5</option>
+        <option value="recall_at_5">Recall@5</option>
         <option value="p50_latency_s">Median latency</option>
       </select>
     </label>

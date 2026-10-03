@@ -145,6 +145,8 @@ export interface RerankerResult {
   model: string | null
   dataset: string
   fixture_sha256: string
+  evaluation_label_sha256: string | null
+  scored_queries: number
   ndcg_at_10: number
   recall_at_1: number
   recall_at_3: number

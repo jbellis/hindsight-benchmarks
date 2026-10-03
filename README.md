@@ -134,7 +134,7 @@ Explore the results yourself on the [Benchmarks Visualizer](https://benchmarks.h
 
 ## Direct reranker comparisons
 
-The reranker benchmark evaluates frozen top-100 passage lists on all ten LoCoMo conversations and the BEIR SciFact test split. Models use identical query/candidate text and source evidence judgments. Quality, uncertainty, whole-query latency, retries, and API usage are reported separately; the public datasets do not establish unseen-data performance.
+The reranker benchmark evaluates frozen top-100 passage lists on all ten LoCoMo conversations and BEIR SciFact, with a separate SciFact label view using explicit human evidence annotations. Models use identical query/candidate text within each comparison. Quality, uncertainty, whole-query latency, retries, and API usage are reported separately; the public datasets do not establish unseen-data performance.
 
 See [methodology and reproduction commands](benchmark-runner/RERANKER_BENCHMARK.md), including why the previous March 2026 reranker metrics were retired, known annotation limitations, and disclosed model-selection exposure.
 

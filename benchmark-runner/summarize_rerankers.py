@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from rerank_eval import ROOT, digest, load_records, read_json, summarize, write_json
+from rerank_eval import ROOT, read_json, summarize, write_json
 
 
 def paired_interval(rows_a, rows_b, metric):
@@ -48,9 +48,14 @@ def main():
         c["reranker_id"] for c in read_json(ROOT / "reranker_models.json")["rerankers"]
     ]
     comparisons = []
-    for dataset, name in [
-        ("locomo", "locomo10-top100"),
-        ("scifact", "scifact-test-top100"),
+    for dataset, name, labels in [
+        ("locomo", "locomo10-top100", None),
+        ("scifact", "scifact-test-top100", None),
+        (
+            "scifact-evidence",
+            "scifact-test-top100",
+            ROOT / "datasets" / "reranker" / "scifact-evidence-labels.json",
+        ),
     ]:
         fixture = ROOT / "datasets" / "reranker" / (name + ".json.gz")
         data = read_json(fixture)
@@ -59,15 +64,18 @@ def main():
             summarize(
                 SimpleNamespace(
                     fixture=fixture,
+                    labels=labels,
                     model=model,
                     records=args.records,
                     output=args.output,
                 )
             )
-            path = args.records / dataset / (model + ".jsonl")
-            records[model] = load_records(
-                path, digest(read_json(path.with_suffix(".metadata.json")))
-            )
+            records[model] = {
+                row["query_id"]: row
+                for row in read_json(
+                    args.output / "records" / (model + "--" + dataset + ".json.gz")
+                )
+            }
         pairs = []
         for i, a in enumerate(models):
             for b in models[i + 1 :]:
@@ -85,6 +93,9 @@ def main():
             {
                 "dataset": dataset,
                 "fixture_sha256": data["fixture_sha256"],
+                "evaluation_label_sha256": read_json(labels)["label_sha256"]
+                if labels
+                else None,
                 "pairs": pairs,
             }
         )

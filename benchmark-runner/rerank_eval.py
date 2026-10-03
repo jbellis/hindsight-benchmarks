@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import tarfile
 import time
 import zipfile
 
@@ -175,6 +176,84 @@ def scifact_source(path):
     return {"scifact": corpus}, queries, [], []
 
 
+def prepare_evidence_labels(args):
+    if args.output.exists():
+        raise ValueError("Evidence labels already exist; choose a new output")
+    fixture = read_json(args.fixture)
+    validate_fixture(fixture)
+    if fixture["dataset"] != "scifact":
+        raise ValueError("Evidence labels require the SciFact fixture")
+    with tarfile.open(args.source) as archive:
+        original = {
+            str(row["id"]): row
+            for row in map(
+                json.loads,
+                archive.extractfile("data/claims_dev.jsonl")
+                .read()
+                .decode()
+                .splitlines(),
+            )
+        }
+        original_corpus = {
+            str(row["doc_id"]): (
+                row["title"] + "\n" + " ".join(row["abstract"])
+            ).strip()
+            for row in map(
+                json.loads,
+                archive.extractfile("data/corpus.jsonl").read().decode().splitlines(),
+            )
+        }
+    if original_corpus.keys() != fixture["corpus"].keys() or any(
+        " ".join(text.split()) != " ".join(fixture["corpus"][doc].split())
+        for doc, text in original_corpus.items()
+    ):
+        raise ValueError("Original source abstracts do not match the scored corpus")
+    queries = {q["id"]: q for q in fixture["queries"]}
+    if original.keys() != queries.keys() or any(
+        row["claim"] != queries[qid]["query"]
+        or set(map(str, row["cited_doc_ids"])) != queries[qid]["relevant"].keys()
+        for qid, row in original.items()
+    ):
+        raise ValueError("Original development claims do not match the BEIR fixture")
+    if any(
+        evidence["label"] not in {"SUPPORT", "CONTRADICT"}
+        for row in original.values()
+        for rationales in row["evidence"].values()
+        for evidence in rationales
+    ):
+        raise ValueError("Unexpected original evidence label")
+    labels = {
+        qid: {str(doc): 1 for doc in row["evidence"]}
+        for qid, row in original.items()
+        if row["evidence"]
+    }
+    if any(not gold.keys() <= fixture["corpus"].keys() for gold in labels.values()):
+        raise ValueError("Evidence document missing from scored corpus")
+    view = {
+        "schema_version": 1,
+        "name": "scifact-evidence",
+        "source": "https://scifact.s3-us-west-2.amazonaws.com/release/latest/data.tar.gz",
+        "source_sha256": hashlib.sha256(args.source.read_bytes()).hexdigest(),
+        "source_split": "original SciFact claims_dev.jsonl",
+        "labels": labels,
+        "excluded_queries": {
+            qid: "No explicit evidence annotation"
+            for qid, row in original.items()
+            if not row["evidence"]
+        },
+        "rule": "Only documents explicitly annotated SUPPORT or CONTRADICT count as relevant; questions without either are excluded uniformly before comparing models.",
+        "query_sha256": {
+            qid: hashlib.sha256(original[qid]["claim"].encode()).hexdigest()
+            for qid in labels
+        },
+    }
+    view["label_sha256"] = digest(view)
+    write_json(args.output, view)
+    print(
+        f"Prepared explicit evidence labels: {len(labels)} queries; {view['label_sha256']}"
+    )
+
+
 def prepare(args):
     import numpy as np
     from huggingface_hub import HfApi
@@ -333,7 +412,9 @@ class Remote:
             if response is None:
                 await asyncio.sleep(2**attempt)
                 continue
-            if response.status_code in {429, 500, 502, 503, 504} and attempt < 5:
+            if (
+                response.status_code == 429 or 500 <= response.status_code < 600
+            ) and attempt < 5:
                 self.retries += 1
                 try:
                     delay = float(response.headers.get("retry-after", 2**attempt))
@@ -612,6 +693,8 @@ def summarize(args):
     queries = {q["id"]: q for q in fixture["queries"]}
     source = args.records / fixture["dataset"] / (args.model + ".jsonl")
     metadata = read_json(source.with_suffix(".metadata.json"))
+    if metadata["fixture_sha256"] != fixture["fixture_sha256"]:
+        raise ValueError("Run metadata does not match the input fixture")
     records = load_records(source, digest(metadata))
     if records.keys() != queries.keys():
         raise ValueError(
@@ -628,7 +711,55 @@ def summarize(args):
         computed = metrics([q["candidates"][j] for j in order], q["relevant"])
         if computed != row["metrics"]:
             raise ValueError("Stored metric mismatch")
+        if row["group"] != q["group"] or row["category"] != q["category"]:
+            raise ValueError("Stored query grouping mismatch")
         rows.append(row)
+    dataset = fixture["dataset"]
+    label_view = None
+    if getattr(args, "labels", None):
+        label_view = read_json(args.labels)
+        if (
+            digest({k: v for k, v in label_view.items() if k != "label_sha256"})
+            != label_view["label_sha256"]
+        ):
+            raise ValueError("Evidence-label hash mismatch")
+        labels = label_view["labels"]
+        excluded = label_view["excluded_queries"]
+        if dataset != "scifact" or label_view["name"] != "scifact-evidence":
+            raise ValueError("Evidence-label view requires the SciFact fixture")
+        if (
+            set(labels) & excluded.keys()
+            or set(labels) | excluded.keys() != queries.keys()
+        ):
+            raise ValueError(
+                "Evidence-label view must account for every original query"
+            )
+        if any(
+            not gold
+            or not gold.keys() <= fixture["corpus"].keys()
+            or any(grade != 1 for grade in gold.values())
+            or label_view["query_sha256"][qid]
+            != hashlib.sha256(queries[qid]["query"].encode()).hexdigest()
+            for qid, gold in labels.items()
+        ):
+            raise ValueError("Invalid evidence labels or mismatched source query text")
+        rows = [
+            {
+                **row,
+                "source_metrics": row["metrics"],
+                "evaluation_label_sha256": label_view["label_sha256"],
+                "metrics": metrics(
+                    [queries[row["query_id"]]["candidates"][i] for i in row["order"]],
+                    labels[row["query_id"]],
+                ),
+            }
+            for row in rows
+            if row["query_id"] in labels
+        ]
+        queries = {
+            qid: {**queries[qid], "relevant": gold} for qid, gold in labels.items()
+        }
+        dataset = label_view["name"]
     import numpy as np
 
     aggregate = {
@@ -662,12 +793,23 @@ def summarize(args):
         "reranker_id": args.model,
         "provider": config["provider"],
         "model": config.get("model"),
-        "dataset": fixture["dataset"],
+        "dataset": dataset,
         "fixture_sha256": fixture["fixture_sha256"],
         "run_sha256": digest(metadata),
         "total_questions": len(rows),
         "groups": len({r["group"] for r in rows}),
-        "sample_id": "locomo10" if fixture["dataset"] == "locomo" else "scifact-test",
+        "sample_id": "locomo10"
+        if dataset == "locomo"
+        else ("scifact-original-dev-evidence" if label_view else "scifact-beir-test"),
+        "scored_queries": len(records),
+        "evaluation_label_sha256": label_view["label_sha256"] if label_view else None,
+        "label_view": {
+            k: v
+            for k, v in label_view.items()
+            if k not in {"labels", "query_sha256", "excluded_queries"}
+        }
+        if label_view
+        else None,
         **aggregate,
         "confidence_intervals": intervals,
         "confidence_method": "5000 bootstrap samples; whole conversations for LoCoMo, queries for SciFact; 95% percentile interval",
@@ -705,16 +847,16 @@ def summarize(args):
         }
         for group in sorted({r["group"] for r in rows})
     }
-    write_json(args.output / (args.model + "--" + fixture["dataset"] + ".json"), result)
+    write_json(args.output / (args.model + "--" + dataset + ".json"), result)
     write_json(
-        args.output / "records" / (args.model + "--" + fixture["dataset"] + ".json.gz"),
+        args.output / "records" / (args.model + "--" + dataset + ".json.gz"),
         rows,
     )
     print(
         json.dumps(
             {
                 "model": args.model,
-                "dataset": fixture["dataset"],
+                "dataset": dataset,
                 **aggregate,
                 "p50_latency_s": result["p50_latency_s"],
                 "cost": cost,
@@ -733,6 +875,10 @@ def main():
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--candidates", type=int, default=100)
     p.add_argument("--device", default="cuda:0")
+    e = subs.add_parser("prepare-evidence-labels")
+    e.add_argument("--source", type=Path, required=True)
+    e.add_argument("--fixture", type=Path, default=DATA / "scifact-test-top100.json.gz")
+    e.add_argument("--output", type=Path, required=True)
     r = subs.add_parser("run")
     r.add_argument("--fixture", type=Path, required=True)
     r.add_argument("--model", required=True)
@@ -747,12 +893,19 @@ def main():
     )
     s = subs.add_parser("summarize")
     s.add_argument("--fixture", type=Path, required=True)
+    s.add_argument(
+        "--labels",
+        type=Path,
+        help="Optional independently sourced evidence-label view; scoring inputs remain the original fixture",
+    )
     s.add_argument("--model", required=True)
     s.add_argument("--records", type=Path, default=ROOT / "reranker-runs")
     s.add_argument("--output", type=Path, default=RESULTS)
     args = parser.parse_args()
     if args.command == "prepare":
         prepare(args)
+    elif args.command == "prepare-evidence-labels":
+        prepare_evidence_labels(args)
     elif args.command == "run":
         asyncio.run(run(args))
     else:

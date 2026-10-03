@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -224,3 +225,142 @@ def test_partial_runs_cannot_publish_quality(tmp_path):
             )
         )
     assert not output.exists()
+
+
+def tiny_complete_run(tmp_path):
+    from types import SimpleNamespace
+    from rerank_eval import write_json
+
+    fixture = {
+        "dataset": "scifact",
+        "corpus": {"a": "First passage", "b": "Second passage"},
+        "queries": [
+            {
+                "id": "q1",
+                "group": "q1",
+                "category": "fact-checking",
+                "query": "Claim",
+                "relevant": {"a": 1},
+                "candidates": ["a", "b"],
+            }
+        ],
+    }
+    fixture["fixture_sha256"] = digest(fixture)
+    args = SimpleNamespace(
+        fixture=tmp_path / "fixture.json.gz",
+        labels=None,
+        model="rrf",
+        records=tmp_path / "records",
+        output=tmp_path / "published",
+    )
+    write_json(args.fixture, fixture)
+    metadata = {
+        "config": {"provider": "rrf", "pricing_type": "free"},
+        "fixture_sha256": fixture["fixture_sha256"],
+    }
+    path = args.records / "scifact" / "rrf.jsonl"
+    path.parent.mkdir(parents=True)
+    write_json(path.with_suffix(".metadata.json"), metadata)
+    row = {
+        "run_sha256": digest(metadata),
+        "query_id": "q1",
+        "group": "q1",
+        "category": "fact-checking",
+        "scores": [0.9, 0.1],
+        "order": [0, 1],
+        "metrics": metrics(["a", "b"], {"a": 1}),
+        "latency_s": 0.1,
+        "retries": 0,
+        "usage": {},
+    }
+    path.write_text(json.dumps(row) + "\n")
+    return args, fixture
+
+
+def test_summary_rejects_changed_passage_text_with_same_ids_and_labels(tmp_path):
+    from rerank_eval import summarize, write_json
+
+    args, fixture = tiny_complete_run(tmp_path)
+    fixture["corpus"]["a"] = "Changed model input"
+    fixture.pop("fixture_sha256")
+    fixture["fixture_sha256"] = digest(fixture)
+    write_json(args.fixture, fixture)
+    with pytest.raises(ValueError, match="metadata does not match"):
+        summarize(args)
+    assert not args.output.exists()
+
+
+def test_evidence_view_reuses_scores_and_preserves_original_metrics(tmp_path):
+    from rerank_eval import read_json, summarize, write_json
+
+    args, _ = tiny_complete_run(tmp_path)
+    view = {
+        "name": "scifact-evidence",
+        "labels": {"q1": {"b": 1}},
+        "excluded_queries": {},
+        "query_sha256": {"q1": hashlib.sha256(b"Claim").hexdigest()},
+    }
+    view["label_sha256"] = digest(view)
+    args.labels = tmp_path / "evidence-labels.json"
+    write_json(args.labels, view)
+    summarize(args)
+    result = read_json(args.output / "rrf--scifact-evidence.json")
+    rows = read_json(args.output / "records" / "rrf--scifact-evidence.json.gz")
+    assert result["mrr"] == 0.5
+    assert result["evaluation_label_sha256"] == view["label_sha256"]
+    assert rows[0]["scores"] == [0.9, 0.1]
+    assert rows[0]["source_metrics"]["mrr"] == 1
+    assert rows[0]["metrics"]["mrr"] == 0.5
+    view["query_sha256"]["q1"] = hashlib.sha256(b"Different claim").hexdigest()
+    view.pop("label_sha256")
+    view["label_sha256"] = digest(view)
+    write_json(args.labels, view)
+    with pytest.raises(ValueError, match="mismatched source query text"):
+        summarize(args)
+
+
+def test_server_overload_retries_without_turning_failure_into_irrelevance(monkeypatch):
+    import httpx
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("BENCHMARK_TEST_KEY", "fake-test-key")
+    attempts = []
+
+    def handle(request):
+        attempts.append(request)
+        if len(attempts) == 1:
+            return httpx.Response(529, headers={"retry-after": "0"})
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"index": 1, "relevance_score": 0.1},
+                    {"index": 0, "relevance_score": 0.9},
+                ],
+                "usage": {"total_tokens": 20},
+            },
+        )
+
+    async def exercise():
+        remote = Remote(
+            {
+                "provider": "voyage",
+                "model": "fake",
+                "endpoint": "https://provider.example/rerank",
+                "key_env": "BENCHMARK_TEST_KEY",
+            },
+            SimpleNamespace(secrets_dir=None, concurrency=2, requests_per_second=1000),
+        )
+        await remote.client.aclose()
+        remote.client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+        try:
+            scores, usage, _ = await remote.score("query", ["gold", "other"])
+            assert scores == [0.9, 0.1]
+            assert usage["total_tokens"] == 20
+            assert remote.retries == 1
+            assert metrics(["gold", "other"], {"gold": 1})["mrr"] == 1
+        finally:
+            await remote.close()
+
+    asyncio.run(exercise())
+    assert len(attempts) == 2

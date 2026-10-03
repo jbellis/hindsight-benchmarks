@@ -37,8 +37,8 @@ export function loadRerankerData(): RerankerRow[] {
   }
   // Quality scores are comparable only on exactly the same frozen input fixture.
   for (const dataset of new Set(results.map(r => r.dataset))) {
-    if (new Set(results.filter(r => r.dataset === dataset).map(r => r.fixture_sha256)).size !== 1) {
-      throw new Error(`Mixed reranker fixtures for ${dataset}`)
+    if (new Set(results.filter(r => r.dataset === dataset).map(r => `${r.fixture_sha256}:${r.evaluation_label_sha256 ?? ''}`)).size !== 1) {
+      throw new Error(`Mixed reranker fixtures or labels for ${dataset}`)
     }
   }
   return results

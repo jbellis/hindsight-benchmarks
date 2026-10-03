@@ -10,7 +10,7 @@
 #   "httpx==0.28.1",
 # ]
 # ///
-"""Direct reranking evaluation; run with `uv run --no-project run_all_reranker.py`."""
+"""Direct reranking evaluation; use `uv run --no-project --script run_all_reranker.py`."""
 
 from rerank_eval import main
 
