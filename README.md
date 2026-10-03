@@ -138,6 +138,8 @@ The reranker benchmark evaluates frozen top-100 passage lists on all ten LoCoMo 
 
 See [methodology and reproduction commands](benchmark-runner/RERANKER_BENCHMARK.md), including why the previous March 2026 reranker metrics were retired, known annotation limitations, and disclosed model-selection exposure.
 
+The [measured results](benchmark-runner/RERANKER_RESULTS.md) include all local and hosted models, confidence intervals, and separate latency/API-cost columns.
+
 ```sh
 cd benchmark-runner
 uv run --no-project --script run_all_reranker.py run \

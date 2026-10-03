@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "interruptions": [
+    {
+      "query_id": "conv-47/q36",
+      "error_type": "RuntimeError",
+      "message": "Provider HTTP 529",
+      "completed_queries": 917,
+      "run_sha256": "06824221372d59f2a2f7fd0a9124adad947d44d254f13a979f381b129fab4120",
+      "dataset": "locomo",
+      "model": "jev-pointwise",
+      "observed_at_utc": "2026-10-03T18:53:58.567731+00:00",
+      "status": "resolved by checkpoint resume",
+      "successful_query_timestamp_utc": "2026-10-03T18:57:12Z"
+    },
+    {
+      "query_id": "conv-47/q131",
+      "error_type": "RuntimeError",
+      "message": "Provider HTTP 529",
+      "completed_queries": 1011,
+      "run_sha256": "06824221372d59f2a2f7fd0a9124adad947d44d254f13a979f381b129fab4120",
+      "dataset": "locomo",
+      "model": "jev-pointwise",
+      "observed_at_utc": "2026-10-03T19:00:35.360261+00:00",
+      "status": "resolved by checkpoint resume",
+      "successful_query_timestamp_utc": "2026-10-03T19:08:21Z"
+    },
+    {
+      "query_id": "conv-49/q39",
+      "error_type": "RuntimeError",
+      "message": "Provider HTTP 529",
+      "completed_queries": 1260,
+      "run_sha256": "06824221372d59f2a2f7fd0a9124adad947d44d254f13a979f381b129fab4120",
+      "dataset": "locomo",
+      "model": "jev-pointwise",
+      "observed_at_utc": "2026-10-03T19:17:33.848881+00:00",
+      "status": "resolved by checkpoint resume",
+      "successful_query_timestamp_utc": "2026-10-03T19:17:41Z"
+    },
+    {
+      "query_id": "conv-49/q41",
+      "error_type": "RuntimeError",
+      "message": "Provider HTTP 529",
+      "completed_queries": 1262,
+      "run_sha256": "06824221372d59f2a2f7fd0a9124adad947d44d254f13a979f381b129fab4120",
+      "dataset": "locomo",
+      "model": "jev-pointwise",
+      "observed_at_utc": "2026-10-03T19:17:44.137088+00:00",
+      "status": "resolved by checkpoint resume",
+      "successful_query_timestamp_utc": "2026-10-03T19:17:51Z"
+    }
+  ],
+  "note": "All scored runs completed every eligible query. Per-query latency and usage include only the successful completed attempt and its internal retries. Abandoned-attempt latency/billing and time between resumes are not included; abandoned billing is unknown."
+}

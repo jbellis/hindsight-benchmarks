@@ -836,17 +836,22 @@ def summarize(args):
         }
         for cat in {r["category"] for r in rows}
     }
-    result["by_group"] = {
-        group: {
-            "count": sum(r["group"] == group for r in rows),
-            **{
-                name: sum(r["metrics"][name] for r in rows if r["group"] == group)
-                / sum(r["group"] == group for r in rows)
-                for name in aggregate
-            },
+    # SciFact groups are single queries, whose full details already live in records.
+    result["by_group"] = (
+        {
+            group: {
+                "count": sum(r["group"] == group for r in rows),
+                **{
+                    name: sum(r["metrics"][name] for r in rows if r["group"] == group)
+                    / sum(r["group"] == group for r in rows)
+                    for name in aggregate
+                },
+            }
+            for group in sorted({r["group"] for r in rows})
         }
-        for group in sorted({r["group"] for r in rows})
-    }
+        if dataset == "locomo"
+        else {}
+    )
     write_json(args.output / (args.model + "--" + dataset + ".json"), result)
     write_json(
         args.output / "records" / (args.model + "--" + dataset + ".json.gz"),

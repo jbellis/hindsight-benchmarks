@@ -2,6 +2,8 @@
 
 This benchmark measures passage ordering on identical, frozen candidate lists. Each model receives exactly the same query and candidate text. It reports relevance quality, uncertainty, client-observed latency, retries, and API usage separately. It does not measure Hindsight's extraction, graph retrieval, observation consolidation, or answer generation.
 
+See [measured results and paired comparisons](RERANKER_RESULTS.md) for the complete October 3, 2026 evaluation.
+
 ## Why the previous results were removed
 
 The March 3, 2026 results measured an unpinned Hindsight `recall()` pipeline, rather than the reranker alone. Historical code applied sigmoid to every provider's scores, including remote scores already bounded by zero and one. The March implementation then sorted by `0.6 * sigmoid(score) + 0.2 * normalized_RRF + 0.1 * temporal + 0.1 * recency`. This compressed a remote model's entire relevance contribution into a range approximately 0.139 wide, while the upstream RRF contribution alone could span 0.2. A local model producing logits had a substantially different effective influence. The score-handling bug was fixed on May 25, 2026; the old result files were never updated. Their exact runtime image is not recorded, so they should not be used to infer a fair model ranking.

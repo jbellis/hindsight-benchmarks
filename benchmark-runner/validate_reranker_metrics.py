@@ -126,7 +126,7 @@ def main():
         "runs": runs,
     }
     write_json(args.output, report)
-    print(f"TREC validation passed: {checks} comparisons across {len(runs)} runs")
+    print(f"TREC validation passed: {checks} comparisons across {len(runs)} result exports")
 
 
 if __name__ == "__main__":
