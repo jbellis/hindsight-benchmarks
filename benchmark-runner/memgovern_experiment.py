@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from embedding_experiment import fused_candidates
+from memgovern_gpu_prepare import checkpoint_metadata
 from memgovern_prepare import (
     DEFAULT_DATA,
     DEFAULT_WORK,
@@ -76,7 +77,6 @@ def freeze_repository(args, embedding, repo):
     if not all(p.exists() for p in paths.values()):
         return False
     metadata = read_json(encoding / "metadata.json")
-    fingerprint = digest(metadata)
     base = repository_input(args, repo)
     corpus = read_items(base / "corpus.jsonl")
     selection = metadata["selection"]
@@ -87,11 +87,11 @@ def freeze_repository(args, embedding, repo):
         selection["seed"],
     )
     matrices = {}
+    execution = {}
     for kind, rows in (("document", corpus), ("query", queries)):
         with np.load(paths[kind], allow_pickle=False) as checkpoint:
-            if checkpoint["fingerprint"].item() != fingerprint or checkpoint[
-                "ids"
-            ].tolist() != [r["id"] for r in rows]:
+            execution[kind] = checkpoint_metadata(checkpoint, metadata)
+            if checkpoint["ids"].tolist() != [r["id"] for r in rows]:
                 raise ValueError("Encoding identity mismatch")
             matrices[kind] = checkpoint["vectors"].copy()
             validate_vectors(matrices[kind], len(rows))
@@ -102,6 +102,7 @@ def freeze_repository(args, embedding, repo):
         "embedding": embedding,
         "corpus_count": len(ids),
         "encoding_metadata": metadata,
+        "encoding_execution": execution,
         "encodings_sha256": {kind: sha_file(path) for kind, path in paths.items()},
         "fusion": "BM25Okapi lowercase regex word tokens; full-corpus stable RRF k=60, 1-based ranks",
         "queries": [],

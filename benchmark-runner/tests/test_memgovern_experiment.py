@@ -133,3 +133,28 @@ def test_freezing_uses_all_documents_without_consulting_qrels(tmp_path):
     assert pool["corpus_count"] == 120
     assert pool["queries"][0]["dense"] == [r["id"] for r in corpus[:100]]
     assert len(pool["queries"][0]["hybrid"]) == 100
+
+
+def test_checkpoint_can_change_hardware_but_not_embedding_semantics(tmp_path):
+    from memgovern_gpu_prepare import checkpoint_metadata, SEMANTIC_FIELDS
+
+    initial = {key: key for key in SEMANTIC_FIELDS}
+    initial["device"] = "cpu"
+    execution = {**initial, "device": "cuda:0", "hardware": "RTX A4000"}
+    path = tmp_path / "vectors.npz"
+    np.savez(
+        path, execution_metadata=json.dumps(execution), fingerprint=digest(execution)
+    )
+    with np.load(path, allow_pickle=False) as checkpoint:
+        assert checkpoint_metadata(checkpoint, initial)["device"] == "cuda:0"
+    execution["config"] = "different model or prompt"
+    np.savez(
+        path, execution_metadata=json.dumps(execution), fingerprint=digest(execution)
+    )
+    with np.load(path, allow_pickle=False) as checkpoint:
+        with pytest.raises(ValueError, match="semantics"):
+            checkpoint_metadata(checkpoint, initial)
+    np.savez(path, fingerprint="altered")
+    with np.load(path, allow_pickle=False) as checkpoint:
+        with pytest.raises(ValueError, match="provenance"):
+            checkpoint_metadata(checkpoint, initial)
