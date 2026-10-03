@@ -16,6 +16,14 @@
     "unreranked_ndcg_at_10": 0.4445367024756338
   },
   {
+    "embedding": "leaf",
+    "fixture_sha256": "ab964b2ed2f63bc235fa2e079389b18537d87b0e9199a13aed626cf71bca906d",
+    "query_count": 1533,
+    "source_corpus_and_labels_match_bge": true,
+    "top100_evidence_recall": 0.8862834802779851,
+    "unreranked_ndcg_at_10": 0.4932264293477392
+  },
+  {
     "embedding": "voyage-1024",
     "fixture_sha256": "e9ff217b5aaf3ee9506dff9efde78e574abb040401eabafb111352bdd3613216",
     "query_count": 1533,
