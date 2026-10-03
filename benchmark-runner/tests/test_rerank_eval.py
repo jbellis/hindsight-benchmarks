@@ -449,6 +449,14 @@ def test_embedding_experiment_applies_model_specific_prompts():
     _, small = encode(Encoder(), ["q"], MODELS["bge-small"], "query", 8)
     assert small["prompt"] == ""
     assert "truncate_dim" not in small
+    _, leaf_query = encode(Encoder(), ["q"], MODELS["leaf"], "query", 8)
+    _, leaf_doc = encode(Encoder(), ["d"], MODELS["leaf"], "document", 8)
+    assert (
+        leaf_query["prompt"]
+        == "Represent this sentence for searching relevant passages: "
+    )
+    assert leaf_doc["prompt"] == ""
+    assert leaf_query["normalize_embeddings"] is True
 
 
 def test_embedding_candidate_selection_uses_ranks_without_gold_injection():

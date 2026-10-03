@@ -40,6 +40,13 @@ MODELS = {
         "query_prompt": "",
         "document_prompt": "",
     },
+    "leaf": {
+        "model": "MongoDB/mdbr-leaf-ir",
+        "revision": "4262131b32c3182bd06e67e92ae69d7bd66e0c5c",
+        "trust_remote_code": False,
+        "query_prompt": "Represent this sentence for searching relevant passages: ",
+        "document_prompt": "",
+    },
     "granite": {
         "model": "ibm-granite/granite-embedding-small-english-r2",
         "revision": "2ab6fa8ea2d674564defd37171ae19079b864b33",
@@ -272,7 +279,7 @@ def export(args):
     all_rows = {}
     comparisons = 0
     output = EXPERIMENT / "results"
-    for embedding in ["bge", "voyage", "granite", "bge-small", "voyage-1024"]:
+    for embedding in ["bge", "voyage", "granite", "bge-small", "voyage-1024", "leaf"]:
         fixture_path = (
             DATA / "locomo10-top100.json.gz"
             if embedding == "bge"
