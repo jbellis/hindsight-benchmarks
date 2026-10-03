@@ -126,6 +126,23 @@
       "key_file": "typesafe_api_key",
       "usd_per_million_tokens": 0.042,
       "pricing_source": "https://docs.typesafe.ai/models"
+    },
+    {
+      "reranker_id": "jev-listwise",
+      "display_name": "Jev 1.13 Hindsight listwise",
+      "provider": "typesafe",
+      "provider_name": "TypeSafe",
+      "provider_icon": "",
+      "pricing_type": "pay-per-use",
+      "model": "jev-1.13.0",
+      "endpoint": "https://api.typesafe.ai/v1/systemone",
+      "key_env": "TYPESAFE_API_KEY",
+      "key_file": "typesafe_api_key",
+      "usd_per_million_tokens": 0.042,
+      "pricing_source": "https://docs.typesafe.ai/models",
+      "ranking_mode": "hindsight-choice",
+      "hindsight_revision": "f7dd3f4fd7420f7beec60c32c965e5e5cf7be066",
+      "prune_candidates": false
     }
   ]
 }

@@ -431,6 +431,13 @@ class Remote:
     async def score(self, query, docs):
         provider = self.config["provider"]
         usage = collections.Counter()
+        if (
+            provider == "typesafe"
+            and self.config.get("ranking_mode") == "hindsight-choice"
+        ):
+            from jev_listwise import HindsightChoice
+
+            return await HindsightChoice(self).score(query, docs)
         if provider == "typesafe":
 
             async def pair(doc):
@@ -538,7 +545,17 @@ async def run(args):
         "batch_size": args.batch_size,
         "concurrency": args.concurrency,
         "requests_per_second": args.requests_per_second,
-        "jev_question": JEV_PROMPT if config["provider"] == "typesafe" else None,
+        "jev_question": JEV_PROMPT
+        if config["provider"] == "typesafe" and not config.get("ranking_mode")
+        else None,
+        "listwise_adapter_sha256": hashlib.sha256(
+            (ROOT / "jev_listwise.py").read_bytes()
+        ).hexdigest()
+        if config.get("ranking_mode")
+        else None,
+        "listwise_tokenizer": "toktok-rs==0.1.3/o200k_base"
+        if config.get("ranking_mode")
+        else None,
     }
     if local:
         import torch

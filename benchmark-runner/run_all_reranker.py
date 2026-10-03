@@ -8,6 +8,7 @@
 #   "numpy==2.5.3",
 #   "rank-bm25==0.2.2",
 #   "httpx==0.28.1",
+#   "toktok-rs==0.1.3",
 # ]
 # ///
 """Direct reranking evaluation; use `uv run --no-project --script run_all_reranker.py`."""

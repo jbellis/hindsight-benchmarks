@@ -364,3 +364,67 @@ def test_server_overload_retries_without_turning_failure_into_irrelevance(monkey
 
     asyncio.run(exercise())
     assert len(attempts) == 2
+
+
+def test_jev_listwise_ranks_shared_pool_and_counts_one_request():
+    remote = object.__new__(Remote)
+    remote.config = {
+        "provider": "typesafe",
+        "model": "jev-1.13.0",
+        "ranking_mode": "hindsight-choice",
+    }
+    bodies = []
+
+    async def post(body):
+        bodies.append(body)
+        return {
+            "model": "jev-1.13.0",
+            "answers": {"rank": {"probabilities": {"c0": 0.1, "c1": 0.9}}},
+            "usage": {"input_tokens": 25},
+        }, 0.02
+
+    remote.post = post
+    scores, usage, _ = asyncio.run(remote.score("query", ["other", "gold"]))
+    assert rank_scores(scores, 2) == [1, 0]
+    assert usage == {"input_tokens": 25, "choice_calls": 1}
+    assert len(bodies) == 1
+    question = bodies[0]["questions"]["rank"]
+    assert question["type"] == "choice"
+    assert question["criteria"] == {"c0": "other", "c1": "gold"}
+    assert bodies[0]["state"] == "Question: query"
+
+
+def test_jev_listwise_tournament_compares_finalists_and_preserves_rest_input_order():
+    from jev_listwise import HindsightChoice
+
+    remote = object.__new__(Remote)
+    remote.config = {"model": "jev-1.13.0"}
+    bodies = []
+
+    async def post(body):
+        bodies.append(body)
+        options = body["questions"]["rank"]["criteria"]
+        count = len(options)
+        return {
+            "model": "jev-1.13.0",
+            "answers": {
+                "rank": {
+                    "probabilities": {
+                        key: (i + 1) / (count * (count + 1) / 2)
+                        for i, key in enumerate(options)
+                    }
+                }
+            },
+            "usage": {"input_tokens": count},
+        }, 0.01
+
+    remote.post = post
+    choice = HindsightChoice(remote)
+    choice.MAX_OPTIONS = 4
+    choice.SHORTLIST = 1
+    scores, usage, _ = asyncio.run(choice.score("query", [str(i) for i in range(9)]))
+    # Last singleton advances without an invalid one-option preliminary Choice.
+    # Finalists 3, 7, 8 compete together; all other candidates retain input order.
+    assert rank_scores(scores, 9) == [8, 7, 3, 0, 1, 2, 4, 5, 6]
+    assert usage["choice_calls"] == 3
+    assert all(len(body["questions"]["rank"]["criteria"]) >= 2 for body in bodies)
