@@ -6,6 +6,7 @@ import collections
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import time
@@ -271,7 +272,10 @@ async def hosted(args, config):
 
 async def process_pools(args, callback):
     source = read_json(args.work / "source.json")
-    pending = {(e, r) for e in MODEL_NAMES for r in source["repositories"]}
+    embeddings = getattr(args, "embeddings", None) or MODEL_NAMES
+    if len(set(embeddings)) != len(embeddings):
+        raise ValueError("Duplicate model ownership")
+    pending = {(e, r) for e in embeddings for r in source["repositories"]}
     while pending:
         for embedding, repo in sorted(pending):
             path = args.work / embedding / "pools" / f"{repo}.json.gz"
@@ -311,6 +315,16 @@ async def local(args, config):
         dest, records, fingerprint = initialize_records(
             args, embedding, repo, pool, config
         )
+        execution = {
+            "gpu_uuid": os.environ.get("CUDA_VISIBLE_DEVICES"),
+            "hardware": torch.cuda.get_device_name(0),
+            "dtype": "bfloat16",
+            "batch_size": 32,
+        }
+        execution_path = dest.with_suffix(".execution.json")
+        if execution_path.exists() and read_json(execution_path) != execution:
+            raise ValueError("Changed GPU owner for checkpoint")
+        write_json(execution_path, execution)
         base = repository_input(args, repo)
         corpus = {r["id"]: r["text"] for r in read_items(base / "corpus.jsonl")}
         with dest.open("a") as stream:
@@ -336,6 +350,7 @@ async def local(args, config):
                     "order": rank_scores(scores, 100),
                     "scores": scores,
                     "usage": {},
+                    "execution_sha256": digest(execution),
                     "latency_s": time.perf_counter() - started,
                 }
                 append_row(stream, records, row)
@@ -455,6 +470,23 @@ def export(args):
                         metadata,
                     )
                     records = load_records(dest, digest(metadata))
+                    execution_path = dest.with_suffix(".execution.json")
+                    if execution_path.exists():
+                        execution = read_json(execution_path)
+                        if any(
+                            r.get("execution_sha256", digest(execution))
+                            != digest(execution)
+                            for r in records.values()
+                        ):
+                            raise ValueError("Local GPU provenance mismatch")
+                        write_json(
+                            OUTPUT
+                            / embedding
+                            / "metadata"
+                            / name
+                            / f"{repo}.execution.json",
+                            execution,
+                        )
                     if records.keys() != queries.keys():
                         raise ValueError("Incomplete result coverage")
                 ranking, labels, rows = {}, {}, []
@@ -568,6 +600,7 @@ def main():
     parser.add_argument("--watch", action="store_true")
     parser.add_argument("--reranker", choices=PATHS[1:])
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--embeddings", nargs="+", choices=MODEL_NAMES)
     args = parser.parse_args()
     if args.action == "rerank" and not args.reranker:
         parser.error("--reranker required")

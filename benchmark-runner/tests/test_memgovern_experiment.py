@@ -158,3 +158,32 @@ def test_checkpoint_can_change_hardware_but_not_embedding_semantics(tmp_path):
     with np.load(path, allow_pickle=False) as checkpoint:
         with pytest.raises(ValueError, match="provenance"):
             checkpoint_metadata(checkpoint, initial)
+
+
+def test_reranking_shard_only_visits_its_owned_embedding(tmp_path):
+    import asyncio
+    from memgovern_experiment import process_pools
+
+    args = SimpleNamespace(work=tmp_path, watch=False, embeddings=["leaf"])
+    write_json(tmp_path / "source.json", {"repositories": {"repo": {}}})
+    pool = {
+        "queries": [
+            {
+                "id": "q",
+                "dense": list(map(str, range(100))),
+                "hybrid": list(map(str, range(100))),
+            }
+        ]
+    }
+    pool["pool_sha256"] = digest(pool)
+    write_json(tmp_path / "leaf/pools/repo.json.gz", pool)
+    visited = []
+
+    async def callback(embedding, repo, pool):
+        visited.append((embedding, repo))
+
+    asyncio.run(process_pools(args, callback))
+    assert visited == [("leaf", "repo")]
+    args.embeddings = ["leaf", "leaf"]
+    with pytest.raises(ValueError, match="ownership"):
+        asyncio.run(process_pools(args, callback))
