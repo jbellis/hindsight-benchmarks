@@ -75,6 +75,17 @@ def report():
         lines.append(
             f"| {NAMES[pair['b']]} | {LABELS[pair['path']]} | {-delta['delta']:+.4f} [{lo:+.4f}, {hi:+.4f}] |"
         )
+    audit_path = OUTPUT / "a4000-cpu-agreement.json"
+    if audit_path.exists():
+        audit = read_json(audit_path)
+        lines.extend(
+            [
+                "",
+                "## CPU and A4000 agreement check",
+                "",
+                f"The same {len(audit['query_ids'])} Granite queries were independently reencoded on CPU and compared with their actual A4000 checkpoints. Maximum absolute vector difference was {audit['maximum_absolute_vector_difference']:.3g}; minimum embedding cosine agreement was {audit['minimum_embedding_cosine_agreement']:.12f}. Both devices produced unit-normalized vectors. This sampled check supports numerical agreement of the device continuation; it does not prove every corpus ranking is identical. [Query IDs, model/device provenance and measurements](../results/experiments/memgovern/a4000-cpu-agreement.json).",
+            ]
+        )
     total_cost = sum(
         row["usd_successful_requests"] for row in result["results"].values()
     )
