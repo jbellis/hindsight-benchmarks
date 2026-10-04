@@ -60,7 +60,7 @@ def report():
             "",
             "## Paired differences versus BGE-small",
             "",
-            "Differences are nDCG@10, with 5,000 paired bootstrap samples of whole repositories. Intervals are 95% percentile intervals, unadjusted for multiple comparisons. They describe uncertainty across repositories for this fixed query sample, not the additional variation from drawing another sample of queries.",
+            "Differences are nDCG@10, with 5,000 paired bootstrap samples of whole repositories. Intervals are 95% percentile intervals, unadjusted for multiple comparisons. They describe uncertainty across repositories for this fixed query sample, not the additional variation from drawing another sample of queries. Resampling units are the official repository corpora; historical names such as the two Airflow and two Home Assistant banks represent related projects, so these intervals should not be read as 48 fully independent project samples.",
             "",
             "| Embedding minus BGE-small | Retrieval path | nDCG@10 difference (95% CI) |",
             "|---|---|---:|",
@@ -84,6 +84,18 @@ def report():
                 "## CPU and A4000 agreement check",
                 "",
                 f"The same {len(audit['query_ids'])} Granite queries were independently reencoded on CPU and compared with their actual A4000 checkpoints. Maximum absolute vector difference was {audit['maximum_absolute_vector_difference']:.3g}; minimum embedding cosine agreement was {audit['minimum_embedding_cosine_agreement']:.12f}. Both devices produced unit-normalized vectors. This sampled check supports numerical agreement of the device continuation; it does not prove every corpus ranking is identical. [Query IDs, model/device provenance and measurements](../results/experiments/memgovern/a4000-cpu-agreement.json).",
+            ]
+        )
+    cache_audit_path = OUTPUT / "ettin-pointwise-cache-audit.json"
+    if cache_audit_path.exists():
+        cache_audit = read_json(cache_audit_path)["results"]
+        granite_audit, leaf_audit = cache_audit["granite"], cache_audit["leaf"]
+        lines.extend(
+            [
+                "",
+                "## Pointwise cache and numerical sensitivity",
+                "",
+                f"The pre-cache runs independently scored {granite_audit['shared_pairs']:,} shared Granite/BGE pairs on the Blackwell and {leaf_audit['shared_pairs']:,} shared Leaf/BGE pairs across A4000/Blackwell. Replacing shared logits with their BGE baseline values would change mean nDCG@10 by {granite_audit['ndcg_at_10_delta_if_shared_pairs_replaced']:+.6f} for {granite_audit['queries']:,} Granite queries and {leaf_audit['ndcg_at_10_delta_if_shared_pairs_replaced']:+.6f} for {leaf_audit['queries']:,} Leaf queries. Granite shared logits were almost bit-identical; Leaf’s cross-device logits had p99 absolute difference {leaf_audit['logit_difference_p99']:.4f}, maximum {leaf_audit['maximum_absolute_logit_difference']:.4f}, and {leaf_audit['top1_changes']} top1 changes. These are BF16 batch/device effects, so tiny reranked differences should not be treated as model superiority. Actual completed rankings are retained; the remaining computations record explicit cache provenance. [Audit measurements](../results/experiments/memgovern/ettin-pointwise-cache-audit.json).",
             ]
         )
     total_cost = sum(
