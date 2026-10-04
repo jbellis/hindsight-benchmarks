@@ -4,7 +4,7 @@ import numpy as np
 
 from memgovern_experiment import OUTPUT, PATHS
 from memgovern_prepare import MODEL_NAMES
-from rerank_eval import ROOT, read_json
+from rerank_eval import ROOT, digest, read_json
 
 NAMES = {
     "bge-small": "BGE-small (Hindsight default)",
@@ -55,6 +55,55 @@ def report():
             lines.append(
                 f"| {NAMES[embedding]} | {LABELS[path]} | {m['ndcg_at_10']:.4f} [{lo:.4f}, {hi:.4f}] | {m['mrr']:.4f} | {m['recall_at_5']:.4f} | {m['recall_at_100']:.4f} | {cost} |"
             )
+    diagnostic_path = OUTPUT / "bm25-diagnostic.json"
+    ablation_path = OUTPUT / "bm25-ettin" / "summary.json"
+    if diagnostic_path.exists() and ablation_path.exists():
+        diagnostic = read_json(diagnostic_path)
+        ablation = read_json(ablation_path)
+        if (
+            diagnostic["independent_metric_checks"] != 288000
+            or ablation["independent_metric_checks"] != 57600
+            or ablation["summary"]["queries"] != 9600
+            or ablation["summary"]["repositories"] != 48
+            or diagnostic["source_sha256"] != ablation["source_sha256"]
+            or ablation["source_sha256"] != digest(read_json(OUTPUT / "source.json"))
+        ):
+            raise ValueError("Expected complete independently checked BM25 ablations")
+        lines.extend(
+            [
+                "",
+                "## BM25 and reranking ablation",
+                "",
+                "These additional paths use the same 9,600 sampled queries and full repository corpora. BM25 uses default BM25Okapi with lowercase regex word tokens and stable descending top100. Hybrid rows reuse the original frozen RRF pools without reranking. BM25 + Ettin uses only BM25 candidates, with no embedding retrieval.",
+                "",
+                "| Retrieval path | nDCG@10 | MRR@100 | Recall@100 |",
+                "|---|---:|---:|---:|",
+            ]
+        )
+        for label, summary in [
+            ("BM25 only", diagnostic["results"]["bm25"]),
+            *[
+                ("BM25 + " + NAMES[name], diagnostic["results"][name + "/hybrid"])
+                for name in MODEL_NAMES
+            ],
+            ("BM25 + Ettin 150M", ablation["summary"]),
+        ]:
+            metrics = summary["repository_macro"]
+            lines.append(
+                f"| {label} | {metrics['ndcg_at_10']:.4f} | {metrics['mrr']:.4f} | {metrics['recall_at_100']:.4f} |"
+            )
+        delta = ablation["paired_minus_bge_hybrid"]
+        lo, hi = delta["ci95"]
+        lines.extend(
+            [
+                "",
+                f"BM25 + Ettin minus BM25/BGE-small + Ettin is {delta['delta']:+.4f} nDCG@10, with paired repository-bootstrap 95% CI [{lo:+.4f}, {hi:+.4f}]. BM25 improves BGE-small's initial ranking, while Ettin closes most of the remaining embedding-model differences. This is a retrieval result on MemGovern's single-positive labels, not evidence that embeddings are unnecessary for other workloads.",
+                "",
+                f"The ablation uses the same pinned Ettin revision, BF16, batch32, Identity activation and maximum length8192. It reuses {ablation['cached_pairs']:,} verified BGE-baseline query/card logits and scores {ablation['computed_pairs']:,} previously unseen pairs on the Blackwell. Frozen BM25 candidates, scores, complete permutations and cache-source provenance are retained. All six metrics are independently checked with pytrec_eval for every query: 57,600 comparisons for BM25 + Ettin and 288,000 for the five unreranked diagnostics. [Diagnostics](../results/experiments/memgovern/bm25-diagnostic.json), [Ettin ablation summary](../results/experiments/memgovern/bm25-ettin/summary.json), [full per-query records](../results/experiments/memgovern/bm25-ettin/records.json.gz).",
+                "",
+                "The exact executed diagnostic and GPU scoring scripts are preserved as [diagnostic source](../results/experiments/memgovern/audit-sources/bm25_diagnostic.py.txt) and [Ettin ablation source](../results/experiments/memgovern/audit-sources/bm25_ettin.py.txt). They import the pinned benchmark helpers from the repository root and use the same source/work directories and model environment as the main run.",
+            ]
+        )
     lines.extend(
         [
             "",

@@ -19,6 +19,25 @@ The primary numbers are repository-macro averages. Query-macro averages are iden
 | Voyage 4 Nano (1024d) | Hybrid + Jev listwise | 0.9270 [0.9153, 0.9380] | 0.9085 | 0.9715 | 0.9978 | $6.322 |
 | Voyage 4 Nano (1024d) | Hybrid + Ettin 150M | 0.9435 [0.9331, 0.9533] | 0.9301 | 0.9755 | 0.9978 | Local compute unpriced |
 
+## BM25 and reranking ablation
+
+These additional paths use the same 9,600 sampled queries and full repository corpora. BM25 uses default BM25Okapi with lowercase regex word tokens and stable descending top100. Hybrid rows reuse the original frozen RRF pools without reranking. BM25 + Ettin uses only BM25 candidates, with no embedding retrieval.
+
+| Retrieval path | nDCG@10 | MRR@100 | Recall@100 |
+|---|---:|---:|---:|
+| BM25 only | 0.8831 | 0.8601 | 0.9938 |
+| BM25 + BGE-small (Hindsight default) | 0.8918 | 0.8680 | 0.9965 |
+| BM25 + Granite Small English R2 | 0.9075 | 0.8853 | 0.9973 |
+| BM25 + MongoDB Leaf IR | 0.9086 | 0.8875 | 0.9972 |
+| BM25 + Voyage 4 Nano (1024d) | 0.9119 | 0.8914 | 0.9978 |
+| BM25 + Ettin 150M | 0.9419 | 0.9289 | 0.9938 |
+
+BM25 + Ettin minus BM25/BGE-small + Ettin is -0.0015 nDCG@10, with paired repository-bootstrap 95% CI [-0.0023, -0.0008]. BM25 improves BGE-small's initial ranking, while Ettin closes most of the remaining embedding-model differences. This is a retrieval result on MemGovern's single-positive labels, not evidence that embeddings are unnecessary for other workloads.
+
+The ablation uses the same pinned Ettin revision, BF16, batch32, Identity activation and maximum length8192. It reuses 654,957 verified BGE-baseline query/card logits and scores 305,043 previously unseen pairs on the Blackwell. Frozen BM25 candidates, scores, complete permutations and cache-source provenance are retained. All six metrics are independently checked with pytrec_eval for every query: 57,600 comparisons for BM25 + Ettin and 288,000 for the five unreranked diagnostics. [Diagnostics](../results/experiments/memgovern/bm25-diagnostic.json), [Ettin ablation summary](../results/experiments/memgovern/bm25-ettin/summary.json), [full per-query records](../results/experiments/memgovern/bm25-ettin/records.json.gz).
+
+The exact executed diagnostic and GPU scoring scripts are preserved as [diagnostic source](../results/experiments/memgovern/audit-sources/bm25_diagnostic.py.txt) and [Ettin ablation source](../results/experiments/memgovern/audit-sources/bm25_ettin.py.txt). They import the pinned benchmark helpers from the repository root and use the same source/work directories and model environment as the main run.
+
 ## Paired differences versus BGE-small
 
 Differences are nDCG@10, with 5,000 paired bootstrap samples of whole repositories. Intervals are 95% percentile intervals, unadjusted for multiple comparisons. They describe uncertainty across repositories for this fixed query sample, not the additional variation from drawing another sample of queries. Resampling units are the official repository corpora; historical names such as the two Airflow and two Home Assistant banks represent related projects, so these intervals should not be read as 48 fully independent project samples.
