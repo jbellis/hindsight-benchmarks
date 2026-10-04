@@ -30,6 +30,7 @@ from rerank_eval import (
     Remote,
     digest,
     load_records,
+    mapped_scores,
     rank_scores,
     read_json,
     versions,
@@ -290,6 +291,58 @@ async def process_pools(args, callback):
             await asyncio.sleep(5)
 
 
+def cached_pair_scores(query, baseline_query, record):
+    """A raw cross-encoder logit belongs to a query/card pair, not to its rank."""
+    if (
+        query["id"] != baseline_query["id"]
+        or query["text"] != baseline_query["text"]
+        or record["query_id"] != query["id"]
+    ):
+        raise ValueError("Changed query for pointwise score reuse")
+    checked_order(record)
+    return dict(zip(baseline_query["hybrid"], record["scores"], strict=True))
+
+
+def load_pair_cache(args, embedding, repo, pool, config):
+    if embedding == "bge-small":
+        return {}, None
+    baseline = read_json(args.work / "bge-small" / "pools" / f"{repo}.json.gz")
+    validate_pool(baseline)
+    for key in ("source_sha256", "selection"):
+        if pool["encoding_metadata"][key] != baseline["encoding_metadata"][key]:
+            raise ValueError("Changed source or query selection for score reuse")
+    dest = args.work / "bge-small" / "records" / "ettin-150m" / f"{repo}.jsonl"
+    metadata = read_json(dest.with_suffix(".metadata.json"))
+    if metadata != run_metadata(baseline, config, 1):
+        raise ValueError("Changed pointwise scorer for score reuse")
+    fingerprint = digest(metadata)
+    records = load_records(dest, fingerprint)
+    baseline_queries = {q["id"]: q for q in baseline["queries"]}
+    if records.keys() != baseline_queries.keys() or records.keys() != {
+        q["id"] for q in pool["queries"]
+    }:
+        raise ValueError("Incomplete baseline for score reuse")
+    return {
+        q["id"]: cached_pair_scores(q, baseline_queries[q["id"]], records[q["id"]])
+        for q in pool["queries"]
+    }, fingerprint
+
+
+def merge_pair_scores(candidates, cache, computed):
+    cached_indices = [i for i, doc in enumerate(candidates) if doc in cache]
+    fresh_indices = [i for i, doc in enumerate(candidates) if doc not in cache]
+    if len(computed) != len(fresh_indices):
+        raise ValueError("Incomplete pointwise score batch")
+    rows = [
+        {"index": i, "relevance_score": cache[candidates[i]]} for i in cached_indices
+    ]
+    rows.extend(
+        {"index": i, "relevance_score": score}
+        for i, score in zip(fresh_indices, computed, strict=True)
+    )
+    return mapped_scores(rows, len(candidates)), cached_indices
+
+
 async def local(args, config):
     import torch
     from sentence_transformers import CrossEncoder
@@ -325,6 +378,9 @@ async def local(args, config):
         if execution_path.exists() and read_json(execution_path) != execution:
             raise ValueError("Changed GPU owner for checkpoint")
         write_json(execution_path, execution)
+        pair_cache, cache_fingerprint = load_pair_cache(
+            args, embedding, repo, pool, config
+        )
         base = repository_input(args, repo)
         corpus = {r["id"]: r["text"] for r in read_items(base / "corpus.jsonl")}
         with dest.open("a") as stream:
@@ -333,15 +389,20 @@ async def local(args, config):
                     continue
                 torch.cuda.synchronize()
                 started = time.perf_counter()
-                scores = (
+                cache = pair_cache.get(q["id"], {})
+                fresh_docs = [doc for doc in q["hybrid"] if doc not in cache]
+                computed = (
                     model.predict(
-                        [(q["text"], corpus[d]) for d in q["hybrid"]],
+                        [(q["text"], corpus[d]) for d in fresh_docs],
                         batch_size=32,
                         activation_fn=torch.nn.Identity(),
                     )
                     .astype(float)
                     .tolist()
+                    if fresh_docs
+                    else []
                 )
+                scores, cached_indices = merge_pair_scores(q["hybrid"], cache, computed)
                 torch.cuda.synchronize()
                 row = {
                     "run_sha256": fingerprint,
@@ -351,6 +412,8 @@ async def local(args, config):
                     "scores": scores,
                     "usage": {},
                     "execution_sha256": digest(execution),
+                    "cached_candidate_indices": cached_indices,
+                    "cache_source_run_sha256": cache_fingerprint,
                     "latency_s": time.perf_counter() - started,
                 }
                 append_row(stream, records, row)
@@ -489,12 +552,34 @@ def export(args):
                         )
                     if records.keys() != queries.keys():
                         raise ValueError("Incomplete result coverage")
+                pair_cache, cache_fingerprint = (
+                    load_pair_cache(args, embedding, repo, pool, config)
+                    if name == "ettin-150m"
+                    else ({}, None)
+                )
                 ranking, labels, rows = {}, {}, []
                 for q in queries.values():
                     positive = qrels[q["source_id"]]
                     record = records[q["id"]] if records else None
                     if record:
                         checked_order(record)
+                        if "cached_candidate_indices" in record:
+                            cached = record["cached_candidate_indices"]
+                            if (
+                                sorted(set(cached)) != cached
+                                or any(not 0 <= i < 100 for i in cached)
+                                or record["cache_source_run_sha256"]
+                                != cache_fingerprint
+                            ):
+                                raise ValueError("Invalid cache provenance")
+                            for i in cached:
+                                if (
+                                    record["scores"][i]
+                                    != pair_cache[q["id"]][q["hybrid"][i]]
+                                ):
+                                    raise ValueError(
+                                        "Cached score differs from baseline pair score"
+                                    )
                     order = (
                         [q["hybrid"][i] for i in record["order"]]
                         if record
@@ -548,6 +633,11 @@ def export(args):
             for row in rows:
                 usage.update(row.get("usage", {}))
             summary["successful_usage"] = dict(usage)
+            if name == "ettin-150m":
+                summary["cached_pairs"] = sum(
+                    len(r.get("cached_candidate_indices", [])) for r in rows
+                )
+                summary["computed_pairs"] = len(rows) * 100 - summary["cached_pairs"]
             summary["usd_successful_requests"] = (
                 usage.get("input_tokens", 0) * 0.042 / 1e6
                 if name == "jev-listwise"

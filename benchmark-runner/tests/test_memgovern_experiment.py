@@ -187,3 +187,25 @@ def test_reranking_shard_only_visits_its_owned_embedding(tmp_path):
     args.embeddings = ["leaf", "leaf"]
     with pytest.raises(ValueError, match="ownership"):
         asyncio.run(process_pools(args, callback))
+
+
+def test_pointwise_cache_maps_input_indices_not_ranked_positions():
+    from memgovern_experiment import cached_pair_scores, merge_pair_scores
+
+    baseline = {"id": "q", "text": "bug", "hybrid": [f"d{i}" for i in range(100)]}
+    record = {
+        "query_id": "q",
+        "scores": list(map(float, range(100))),
+        "order": list(reversed(range(100))),
+    }
+    query = {"id": "q", "text": "bug"}
+    cache = cached_pair_scores(query, baseline, record)
+    scores, indices = merge_pair_scores(["d7", "unseen", "d1"], cache, [0.5])
+    assert scores == [7, 0.5, 1]
+    assert indices == [0, 2]
+    with pytest.raises(ValueError, match="query"):
+        cached_pair_scores({"id": "q", "text": "different bug"}, baseline, record)
+    with pytest.raises(ValueError, match="Incomplete"):
+        merge_pair_scores(["d7", "unseen"], cache, [])
+    with pytest.raises(ValueError):
+        merge_pair_scores(["d7"], {"d7": float("nan")}, [])
